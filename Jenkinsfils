@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+    
+    tools {
+        nodejs 'node21'
+    }
+
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Itzmesahil/3-Tier-Full-Stack.git'
+                echo 'Git Clone Done'
+            }
+        }
+        
+        stage('Install Package-Dependency') {
+            steps {
+                sh "npm install"
+                echo 'Install Package-Dependency Done'
+            }
+        }
+        
+        stage('Unit Tests') {
+            steps {
+                sh 'npm test'
+                echo 'Tested Successfully'
+            }
+        }
+        
+        stage('Trivy FS Scan') {
+            steps {
+                sh 'trivy fs --format table -o fs-report.html .'
+                echo 'Scan Done Successfully'
+            }
+        }
+        
+        stage('SonarQube') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=Campground -Dsonar.projectName=Campground'
+                }
+                echo 'SonarQube Analysis Done'
+            }
+        }
+        
+        stage('Docker Build & Tag') {
+            steps {
+                sh 'docker build -t itzmesahil/camp:latest .'
+                echo 'Built and Tagged Successfully'
+            }
+        }
+        
+        stage('Trivy Image Scan') {
+            steps {
+                sh 'trivy image --format table -o image-report.html itzmesahil/camp:latest'
+                echo 'Image Scan Done Successfully'
+            }
+        }
+        
+        stage('Push To Docker-Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "dockerHub", passwordVariable: "dockerHubPass", usernameVariable: "dockerHubUser")]) {
+                    sh "docker login -u ${dockerHubUser} -p ${dockerHubPass}"
+                    sh "docker push itzmesahil/camp:latest"
+                    echo 'Image Pushed To DockerHub'
+                }
+            }
+        }
+        
+        stage('Docker Deploy To Dev') {
+            steps {
+                sh 'docker run -d --name camp-app -p 3000:3000 itzmesahil/camp:latest'
+                echo 'Docker Deployed Successfully'
+            }
+        }
+    }
+}
